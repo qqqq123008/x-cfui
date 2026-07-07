@@ -11,9 +11,7 @@
 
 ## 📸 截图
 
-> TODO: 请在此处添加面板截图
-
-| 主界面 | 节点管理 | 客户端设置 |
+| 节点管理 | 分流设置 | 客户端设置 |
 |-------|---------|-----------|
 | ![screenshot](docs/screenshots/main.png) | ![screenshot](docs/screenshots/nodes.png) | ![screenshot](docs/screenshots/clients.png) |
 
