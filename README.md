@@ -126,25 +126,6 @@ sudo bash xcfui-deploy.sh
 
 ---
 
-## 📦 项目结构
-
-```
-xray_admin/
-├── app.py                  ← 面板核心源码（单文件全栈）
-├── deploy_xcfui.sh         ← 部署脚本源码
-├── restore_xcfui.sh        ← 恢复脚本源码
-├── backup_xcfui.sh         ← 备份脚本源码
-├── make_xcfui.py           ← 单文件脚本烘焙工具
-├── audit_panel.py          ← 面板静态审计工具
-├── smoke_live.py           ← 真机运行时冒烟测试
-├── deploy_panel.py         ← 面板推送部署工具
-├── xcfui-deploy.sh         ← 烘焙产物：一键部署（24MB，含 Xray 内嵌）
-├── xcfui-restore.sh        ← 烘焙产物：一键搬家（25MB，含备份包内嵌）
-├── pack_xcfui.py           ← 备份包重打包工具
-└── ssh_keys_backup/        ← 服务器管理密钥（请勿公开）
-```
-
----
 
 ## 🔧 开发
 
