@@ -3,7 +3,7 @@
 """
 x-cfui 管理面板 (入口控制器)
 零依赖: 仅用 Python 标准库 (http.server / ssl / base64 / subprocess)
-适配架构: 入口服务器多端口 -> 不同出口节点 (出口A / 出口B / ...)
+适配架构: 多端口入口 -> 不同出口节点
 
 功能:
   - 入口加密: 每个入口端口支持 none / reality(伪装) / tls(SSL)
@@ -58,7 +58,7 @@ net.ipv4.tcp_wmem=4096 65536 67108864
 """
 
 SERVICE_UNIT = """[Unit]
-Description=x-cfui Xray Admin Panel (relay controller)
+Description=x-cfui Xray Admin Panel
 After=network.target
 
 [Service]
@@ -94,15 +94,13 @@ REALITY_TARGETS = ["www.microsoft.com", "www.apple.com", "github.com", "www.clou
 FW_ALLOW_BASE = ["22/tcp", "5000/tcp", "443/tcp", "8443/tcp", "10443/tcp"]
 
 # ---- SSH 安全加固相关 (面板管理密钥 / 服务器地址映射) ----
-PANEL_KEY = "/root/.ssh/xcfui_ed25519"          # 面板自身的管理私钥(入口服务器上生成)
+PANEL_KEY = "/root/.ssh/xcfui_ed25519"          # 面板自身的管理私钥(入口机上生成)
 PANEL_PUB = PANEL_KEY + ".pub"
 SSH_KEY_DIR = "/opt/x-cfui/ssh_keys"            # 用户上传的连接用密钥库(用于新出口等)
 HOST_KEY_DIR = "/opt/x-cfui/host_keys"          # 三台服务器当前登录私钥(供面板下载备份)
-# 节点地址不再写死任何生产 IP: 运行时完全由 state.json 的 cn_addr/sg_addr/ru_addr 驱动。
-# 这里仅保留占位默认值(空串); 首次部署(deploy_xcfui.sh)与恢复(restore_xcfui.sh)都会把真实公网 IP 写入 state.json。
+# 节点地址不再写死任何生产 IP: 运行时完全由 state.json 的 cn_addr 驱动。
+# 这里仅保留占位默认值(空串); deploy/restore 脚本都会把真实公网 IP 写入 state.json。
 CN_ADDR = ""
-SG_ADDR = ""
-RU_ADDR = ""
 
 
 def _ssh_args(user, port, host, key=None):
@@ -197,7 +195,7 @@ def delete_ssh_key(name):
 
 
 def ensure_panel_key():
-    """在入口服务器(面板所在)生成 ed25519 管理密钥对, 供面板免密码管理各服务器"""
+    """在入口(面板所在)生成 ed25519 管理密钥对, 供面板免密码管理各服务器"""
     if os.path.exists(PANEL_KEY) and os.path.exists(PANEL_PUB):
         return True
     try:
@@ -220,16 +218,14 @@ def panel_pubkey():
 
 
 def resolve_target(target):
-    """返回 ('cn', None) 或 ('exit', exit_dict) 或 (None, None)"""
-    if target == "cn":
-        return "cn", None
+    """返回 ('entry', None) 或 ('exit', exit_dict) 或 ('unknown', None)"""
+    if target == "entry" or target == "cn":
+        return "entry", None
     st = load_state()
-    addr = SG_ADDR if target == "sg" else (RU_ADDR if target == "ru" else None)
-    if addr:
-        for ex in st.get("exits", []):
-            if ex.get("address") == addr:
-                return "exit", ex
-    return None, None
+    for ex in st.get("exits", []):
+        if ex.get("tag") == target:
+            return "exit", ex
+    return "unknown", None
 
 
 def load_state():
@@ -242,17 +238,8 @@ def load_state():
             "client_fp": "chrome",
             "cn_ssh_port": 22,
             "cn_addr": CN_ADDR,
-            "sg_addr": SG_ADDR,
-            "ru_addr": RU_ADDR,
-            "exits": [
-                {"tag": "sg-out", "name": "出口节点A", "address": SG_ADDR,
-                 "port": 10443, "uuid": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
-                 "relay_security": "tls", "pushed_relay": None, "bbr": False}
-            ],
-            "inbounds": [
-                {"port": 443, "tag": "cn-443", "name": "默认-出口A", "exit": "sg-out",
-                 "security": "reality"}
-            ],
+            "exits": [],
+            "inbounds": [],
         }
         save_state(init)
         return init
@@ -269,8 +256,6 @@ def load_state():
         ib.setdefault("security", "none")
     st.setdefault("cn_ssh_port", 22)
     st.setdefault("cn_addr", CN_ADDR)
-    st.setdefault("sg_addr", SG_ADDR)
-    st.setdefault("ru_addr", RU_ADDR)
     st.setdefault("routing_rules", [])
     st.setdefault("smart_routing", False)
     # migrate single public_host string -> public_hosts list
@@ -291,17 +276,13 @@ def save_state(state):
 
 
 # ===================== 节点地址: 运行时优先从 state.json 读取 =====================
-# 根因修复: 旧的 CN_ADDR/SG_ADDR/RU_ADDR 写死在源码里, 导致"恢复/迁移"只能靠脆弱的 sed 改写源码,
+# CN_ADDR 从 state.json.cn_addr 读取(由 deploy/restore 脚本自动写入)
 # 且 bug 会随备份包一起被打包。现在改为优先读 state.json 的 cn_addr/sg_addr/ru_addr 字段,
 # 恢复时只需更新数据文件(写 state.json)即可改 IP, 无需改动源码本身。源码中的字面量仅作首次部署兜底。
 try:
     _node_state = load_state()
     if _node_state.get("cn_addr"):
         CN_ADDR = _node_state["cn_addr"]
-    if _node_state.get("sg_addr"):
-        SG_ADDR = _node_state["sg_addr"]
-    if _node_state.get("ru_addr"):
-        RU_ADDR = _node_state["ru_addr"]
 except Exception:
     pass
 
@@ -328,7 +309,7 @@ def gen_short_id():
 
 
 def ensure_cn_cert():
-    """入口侧自签证书 (入口用 tls 时)"""
+    """自签证书 (入口用 tls 时)"""
     cert = "/usr/local/etc/xray/cn_cert.pem"
     key = "/usr/local/etc/xray/cn_key.pem"
     if os.path.exists(cert) and os.path.exists(key):
@@ -407,7 +388,7 @@ echo "EXIT_DONE cca=$(sysctl -n net.ipv4.tcp_congestion_control)"
     except subprocess.TimeoutExpired:
         return False, "推送超时 (300s)"
     except FileNotFoundError:
-        return False, "入口服务器缺少 sshpass, 请先: apt-get install -y sshpass"
+        return False, "入口缺少 sshpass, 请先: apt-get install -y sshpass"
     except Exception as e:
         return False, f"异常: {e}"
 
@@ -563,7 +544,7 @@ def fw_operate_local(action, port=None, proto="tcp", extra_ports=None):
 def fw_status_remote(address, ssh_pass="", ssh_user="root", ssh_port=22, key=None):
     """远程查询防火墙状态。优先指定 key > 面板管理密钥, 密码回退。"""
     if not shutil.which("sshpass"):
-        return {"ok": False, "msg": "入口服务器缺少 sshpass"}
+        return {"ok": False, "msg": "入口缺少 sshpass"}
     script = build_fw_script(None)
     try:
         env = dict(os.environ); env["SSHPASS"] = ssh_pass or ""
@@ -582,7 +563,7 @@ def fw_operate_remote(address, ssh_pass="", action=None, port=None, proto="tcp",
                       ssh_user="root", ssh_port=22, extra_ports=None, key=None):
     """远程操作防火墙。优先指定 key > 面板管理密钥, 密码回退。"""
     if not shutil.which("sshpass"):
-        return {"ok": False, "msg": "入口服务器缺少 sshpass"}
+        return {"ok": False, "msg": "入口缺少 sshpass"}
     script = build_fw_script(action, port, proto, extra_ports)
     try:
         env = dict(os.environ); env["SSHPASS"] = ssh_pass or ""
@@ -629,7 +610,7 @@ def _harden_allow_list(ports):
 
 
 def fw_harden(target, allow_ports):
-    """对单台服务器执行一键加固 (本地入口 / SSH 出口A/出口B)。"""
+    """对单台服务器执行一键加固 (入口本地 / SSH 出口)。"""
     script = build_fw_harden_script(allow_ports)
     rc, out, err = ssh_exec(target, script, timeout=120)
     if rc != 0:
@@ -644,7 +625,8 @@ def fw_harden(target, allow_ports):
 def fw_harden_all():
     """对三台服务器依次一键加固: 放行各自正在监听的全部端口, 拒绝其余端口。"""
     res = {}
-    for tgt in ("cn", "sg", "ru"):
+    st = load_state()
+    for tgt in ["entry"] + [e["tag"] for e in st.get("exits", [])]:
         lp = get_listening_ports(tgt)
         if not lp.get("ok"):
             res[tgt] = {"ok": False, "msg": lp.get("msg", "获取端口失败")}
@@ -728,7 +710,7 @@ def autostart_local():
 def autostart_remote(address, ssh_pass="", ssh_user="root", ssh_port=22, key=None):
     """SSH 到出口服务器核验开机自启状态。优先指定 key > 面板管理密钥, 密码仅作回退。"""
     if not shutil.which("sshpass"):
-        return {"ok": False, "msg": "入口服务器缺少 sshpass"}
+        return {"ok": False, "msg": "入口缺少 sshpass"}
     script = '''XE=$(systemctl is-enabled xray 2>/dev/null)
 XA=$(systemctl is-active xray 2>/dev/null)
 BP=$(grep -rqs "tcp_congestion_control[[:space:]]*=[[:space:]]*bbr" /etc/sysctl.d/ /etc/sysctl.conf && echo yes || echo no)
@@ -788,7 +770,7 @@ def bbr_status():
 def bbr_status_remote(address, ssh_pass="", ssh_user="root", ssh_port=22, key=None):
     """SSH 到出口服务器检查 BBR 状态。优先指定 key > 面板管理密钥, 密码回退。"""
     if not shutil.which("sshpass"):
-        return {"ok": False, "msg": "入口服务器缺少 sshpass"}
+        return {"ok": False, "msg": "入口缺少 sshpass"}
     script = '''cca=$(sysctl -n net.ipv4.tcp_congestion_control 2>/dev/null)
 qdisc=$(sysctl -n net.core.default_qdisc 2>/dev/null)
 if grep -rqs "tcp_congestion_control[[:space:]]*=[[:space:]]*bbr" /etc/sysctl.d/ /etc/sysctl.conf; then persisted=yes; else persisted=no; fi
@@ -820,7 +802,7 @@ echo "cca=$cca qdisc=$qdisc persisted=$persisted mod=$mod"
 def ssh_exec(target, script, timeout=60):
     """在指定服务器上执行脚本: 入口本地执行, 出口通过面板管理密钥或密码 SSH"""
     kind, ex = resolve_target(target)
-    if kind == "cn":
+    if kind == "entry":
         proc = subprocess.run(["bash", "-c", script], capture_output=True, text=True, timeout=timeout)
         return proc.returncode, proc.stdout, proc.stderr
     if kind == "exit" and ex:
@@ -922,34 +904,56 @@ def _machine_backup_worker(target):
             '  echo "生成时间: $(date)"; echo "主机名: $(hostname)";\n'
             '  echo "包含: 面板设置(state.json)/防火墙/xray分流与证书/SSH密钥(身份+主机)/SSH加固/fail2ban/BBR/sysctl/nginx网站/系统服务";\n'
             '} > "$META/MANIFEST.txt"\n'
-            # 构造要备份的路径清单 (仅存在的)
+            # 构造要备份的路径清单 (完整应用与配置)
             'LIST=$(mktemp); EXCL=$(mktemp)\n'
             'echo "/opt/x-cfui/machine_backups" > "$EXCL"\n'
             'for p in \\\n'
-            '  /opt/x-cfui/state.json \\\n'
-            '  /opt/x-cfui/ban.json \\\n'
-            '  /opt/x-cfui/brute_config.json \\\n'
-            '  /opt/x-cfui/backups \\\n'
-            '  /opt/x-cfui/host_keys \\\n'
-            '  /opt/x-cfui/ssh_keys \\\n'
-            '  /opt/x-cfui/app.py \\\n'
-            '  "$META" \\\n'
-            '  /usr/local/etc/xray/config.json \\\n'
-            '  /usr/local/etc/xray/config.json.bak \\\n'
-            '  /usr/local/etc/xray/certs \\\n'
+            '  /opt/x-cfui \\\n'
+            '  /usr/local/bin/xray \\\n'
+            '  /usr/local/etc/xray \\\n'
             '  /etc/ssh \\\n'
             '  /root/.ssh \\\n'
             '  /etc/fail2ban \\\n'
             '  /etc/sysctl.d \\\n'
-            '  /etc/systemd/system/xray.service \\\n'
-            '  /etc/systemd/system/x-cfui.service \\\n'
+            '  /etc/systemd/system \\\n'
             '  /etc/nginx \\\n'
             '  /var/www/html \\\n'
-            '  /etc/nftables.conf ; do\n'
+            '  /var/spool/cron \\\n'
+            '  /var/backups \\\n'
+            '  /etc/nftables.conf \\\n'
+            '  /etc/ufw \\\n'
+            '  /etc/hostname \\\n'
+            '  /etc/hosts \\\n'
+            '  /etc/timezone \\\n'
+            '  /etc/cron.d \\\n'
+            '  /etc/cron.daily \\\n'
+            '  /etc/cron.hourly \\\n'
+            '  /etc/cron.weekly \\\n'
+            '  /etc/cron.monthly \\\n'
+            '  /etc/chrony \\\n'
+            '  /etc/logrotate.d \\\n'
+            '  /etc/security \\\n'
+            '  /etc/avahi \\\n'
+            '  /etc/rsyslog.d \\\n'
+            '  /etc/inputrc \\\n'
+            '  /etc/bash.bashrc \\\n'
+            '  /etc/profile \\\n'
+            '  /etc/skel \\\n'
+            '  /etc/sudoers.d \\\n'
+            '  /etc/modules-load.d \\\n'
+            '  /opt/xray_admin \\\n'
+            '  "$META" ; do\n'
             '  [ -e "$p" ] && echo "$p"\n'
             'done > "$LIST"\n'
-            # 打包 (仅列出的应用与配置文件, 排除整机备份目录自身; geoip/geosite 数据文件较大且可经面板重新拉取, 不纳入)
-            'tar --numeric-owner -czpf "$TMP" -X "$EXCL" -T "$LIST" >/dev/null 2>&1\n'
+            # 打包 (排除大文件/递归/临时; 含全部应用与配置)
+            'tar --numeric-owner \\\n'
+            '  --exclude="opt/x-cfui/machine_backups" \\\n'
+            '  --exclude="opt/x-cfui/__pycache__" \\\n'
+            '  --exclude="opt/x-cfui/app.py.bak.*" \\\n'
+            '  --exclude="opt/x-cfui/machine_backup_jobs.json" \\\n'
+            '  --exclude="usr/local/etc/xray/geoip.dat" \\\n'
+            '  --exclude="usr/local/etc/xray/geosite.dat" \\\n'
+            '  -czpf "$TMP" -X "$EXCL" -T "$LIST" >/dev/null 2>&1\n'
             'RC=$?\n'
             'rm -f "$LIST" "$EXCL"\n'
             'if [ "$RC" = "0" ] || [ "$RC" = "1" ]; then\n'
@@ -1046,9 +1050,8 @@ def machine_backup_stream(target, filename, handler):
     path = os.path.join(MACHINE_BACKUP_DIR, name)
     content_type = "application/octet-stream"
     disp = 'attachment; filename="%s"' % name
-    if target == "cn":
-        if not os.path.exists(path):
-            handler._send(404, {"ok": False, "msg": "备份文件不存在"}); return
+    if target == "entry" or target == "cn":
+        if not os.path.exists(path):            handler._send(404, {"ok": False, "msg": "备份文件不存在"}); return
         size = os.path.getsize(path)
         handler.send_response(200)
         handler.send_header("Content-Type", content_type)
@@ -1187,7 +1190,7 @@ echo RESTART_SCHEDULED
 def _probe_port(target, port):
     """探测目标服务器 SSH 端口是否可登录(用于端口修改后验证)"""
     kind, ex = resolve_target(target)
-    if kind == "cn":
+    if kind == "entry":
         proc = subprocess.run(
             ["bash", "-c", f"ss -tlnp 2>/dev/null | grep -q ':{port} ' && echo LISTEN_OK || echo LISTEN_NO"],
             capture_output=True, text=True, timeout=10)
@@ -1230,7 +1233,7 @@ def ssh_set_port(target, new_port):
     _apply_ports(target, [new_port])
     time.sleep(3)
     st = load_state()
-    if kind == "cn":
+    if kind == "entry":
         st["cn_ssh_port"] = new_port
     else:
         for i, e in enumerate(st["exits"]):
@@ -1285,7 +1288,7 @@ rm -f $KF
 
 def ssh_download_key(target):
     """返回某台服务器当前登录私钥(供管理员下载备份)。来源: 面板主机密钥库 host_<target>.pem"""
-    if target not in ("cn", "sg", "ru"):
+    if target not in ("entry", "cn"):
         return {"ok": False, "msg": "未知服务器目标"}
     p = os.path.join(HOST_KEY_DIR, "host_%s.pem" % target)
     if not os.path.exists(p):
@@ -1312,7 +1315,7 @@ echo DEPLOYED
 def _verify_key_login(target):
     """验证面板管理密钥能否登录目标(强制公钥认证, 排除密码回退)"""
     kind, ex = resolve_target(target)
-    if kind == "cn":
+    if kind == "entry":
         port = load_state().get("cn_ssh_port", 22)
         proc = subprocess.run(
             ["ssh", "-o", "StrictHostKeyChecking=no", "-o", "PreferredAuthentications=publickey",
@@ -1332,7 +1335,7 @@ def _verify_key_login(target):
 
 
 def _probe_password_login(target):
-    """探测目标是否仍接受密码登录(仅用于验证 key-only 是否生效; cn 无密码无法探测)"""
+    """探测目标是否仍接受密码登录(仅用于验证 key-only 是否生效; 入口无密码无法探测)"""
     kind, ex = resolve_target(target)
     if kind == "exit" and ex:
         host = ex["address"]; user = ex.get("ssh_user", "root"); pw = ex.get("ssh_pass", "")
@@ -1485,7 +1488,7 @@ def ssh_ban_unban(target, ip):
 
 
 def build_xray_config(state):
-    """根据 state 生成入口服务器的 xray config.json, 返回 (cfg, orphan_ports)"""
+    """根据 state 生成入口的 xray config.json, 返回 (cfg, orphan_ports)"""
     exit_tags = {ex["tag"] for ex in state["exits"]}
     inbounds = []
     for ib in state["inbounds"]:
@@ -1815,10 +1818,10 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
     <div class="row" style="margin-top:8px"><button onclick="checkBbr()" data-i18n="bbrBtn">验证入口 BBR</button></div>
   </div>
 
-  <h2 data-i18n="exitTitle">① 出口节点 (入口中继的目标 / 可一键开启BBR)</h2>
+  <h2 data-i18n="exitTitle">① 出口节点</h2>
   <table id="exitTable"><thead><tr><th data-i18n="thName">名称</th><th data-i18n="thAddr">地址</th><th data-i18n="thPort">端口</th><th>UUID</th><th data-i18n="thRelay">中继加密</th><th>BBR</th><th data-i18n="thOp">操作</th></tr></thead><tbody></tbody></table>
   <div class="row" style="margin-top:10px">
-    <input id="ex_name" data-i18n-ph="phExitName" placeholder="出口名称(如俄罗斯)">
+    <input id="ex_name" data-i18n-ph="phExitName" placeholder="出口名称(如HK节点)">
     <input id="ex_addr" placeholder="出口服务器IP">
     <input id="ex_uuid" placeholder="UUID(留空自动生成)">
     <button onclick="addExit()" data-i18n="btnAddExit">+ 添加出口节点</button>
@@ -1829,7 +1832,7 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
 
 <div class="section" data-nav="routing">
 <div class="card">
-  <h2 data-i18n="inTitle">② 入口端口 (用户连接的端口 → 分流到出口)</h2>
+  <h2 data-i18n="inTitle">② 入口端口</h2>
   <table id="inTable"><thead><tr><th data-i18n="thPort">端口</th><th data-i18n="thName">名称</th><th data-i18n="thExit">分流到出口</th><th data-i18n="thSec">加密方式</th><th>UUID</th><th data-i18n="thOp">操作</th></tr></thead><tbody></tbody></table>
   <div class="row" style="margin-top:10px">
     <input id="in_port" placeholder="新入口端口号(如8443)" type="number">
@@ -1844,7 +1847,7 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
     <button onclick="addInbound()" data-i18n="btnAddIn">+ 添加入口端口</button>
   </div>
   <div class="row">
-    <span class="tag" data-i18n="uuidTag">全局客户端UUID (所有CN入口共用)</span>
+    <span class="tag" data-i18n="uuidTag">全局客户端UUID (所有入口共用)</span>
     <input id="client_uuid" style="min-width:340px">
     <button class="sec" onclick="saveClientUuid()" data-i18n="btnSaveUuid">保存UUID</button>
   </div>
@@ -1854,9 +1857,9 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
 <div class="section" data-nav="nodes">
 <div class="card">
   <h2 data-i18n="provTitle">③ 一键部署新出口服务器 (自动装Xray + TLS + BBR)</h2>
-  <div class="sub" data-i18n="provSub">填好信息点按钮, 面板自动: 加入出口节点(默认10443/TLS/BBR) → SSH 装 Xray 并配置接收入口中继 → 记录 SSH 凭据。</div>
+  <div class="sub" data-i18n="provSub">填好信息点按钮, 面板自动: 加入出口节点(默认10443/TLS/BBR) → SSH 装 Xray 并接收入口中继 → 记录 SSH 凭据。</div>
   <div class="row">
-    <input id="prov_name" data-i18n-ph="phExitName" placeholder="出口名称(如俄罗斯)" style="min-width:140px">
+    <input id="prov_name" data-i18n-ph="phExitName" placeholder="出口名称(如HK节点)" style="min-width:140px">
     <input id="prov_addr" placeholder="服务器IP地址" style="min-width:180px">
     <input id="prov_user" placeholder="SSH用户名" value="root" style="min-width:120px">
     <input id="prov_pass" type="password" placeholder="SSH密码">
@@ -1976,9 +1979,7 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
   <div class="row">
     <span data-i18n="thTarget">目标服务器</span>
     <select id="ssh_target" onchange="sshStatus()">
-      <option value="cn">入口服务器 (22022)</option>
-      <option value="sg">出口节点A (23022)</option>
-      <option value="ru">出口节点B (24022)</option>
+      <option value="entry">入口服务器</option>
     </select>
     <button class="sec" onclick="sshStatus()" data-i18n="sshRefresh">刷新状态</button>
   </div>
@@ -2040,9 +2041,7 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
   <div class="row">
     <span data-i18n="bruteTarget">目标服务器</span>
     <select id="brute_ssh_target">
-      <option value="cn">入口服务器 (22022)</option>
-      <option value="sg">出口节点A (23022)</option>
-      <option value="ru">出口节点B (24022)</option>
+      <option value="entry">入口服务器</option>
     </select>
     <button class="sec" onclick="bruteSshStatus()" data-i18n="bruteRefreshBans">查询状态</button>
     <button class="sec" onclick="bruteSshEnable(true)" data-i18n="bruteEnable">启用 SSH 防护</button>
@@ -2068,7 +2067,7 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
       <button onclick="routeSave()" data-i18n="routeApply">保存并应用</button>
       <span id="route_msg"></span>
     </div>
-    <div class="sub" data-i18n="routeHint">示例: 类型=域名后缀 值=tiktok.com 出口=sg-out → 所有 TikTok 流量强制走出口A; 类型=GeoIP 值=sg 出口=direct → 出口A IP 直连。</div>
+    <div class="sub" data-i18n="routeHint">示例: 类型=域名后缀 值=tiktok.com 出口=hk-out → 所有 TikTok 流量走香港节点; 类型=GeoIP 值=HK 出口=direct → 香港 IP 直连。</div>
   </div>
 </div>
 </div>
@@ -2129,9 +2128,7 @@ details{margin:4px 0}summary{cursor:pointer;color:var(--mut);font-size:12px}
   <div class="sub" data-i18n="machineSub">对指定服务器执行完整文件系统备份 (tar.gz 全量归档, 排除 /proc /sys /dev 等虚拟文件系统), 备份文件存储在目标服务器本地 /opt/x-cfui/machine_backups。可下载到本地或删除。</div>
   <div class="row">
     <select id="machine_target" onchange="machineLoad()">
-      <option value="cn">入口服务器(本机)</option>
-      <option value="sg">出口节点A</option>
-      <option value="ru">出口节点B</option>
+      <option value="entry">入口(本机)</option>
     </select>
     <button onclick="machineStart()" data-i18n="machineStart">开始整机备份</button>
     <button class="sec" onclick="machineLoad()" data-i18n="machineRefresh">刷新列表</button>
@@ -2162,11 +2159,11 @@ let THEME = localStorage.getItem('xc_theme') || 'dark';
 const I18N = {
   zh: {
     appName:'x-cfui 管理面板', bbrTitle:'BBR 状态验证', bbrSub:'BBR 是 TCP 拥塞控制算法。下方「验证入口 BBR」检测本机入口服务器; 每个出口节点表格内有独立「验证BBR」按钮。',
-    bbrBtn:'验证入口 BBR', exitTitle:'① 出口节点 (入口中继的目标 / 可一键开启BBR)', thName:'名称', thAddr:'地址', thPort:'端口', thRelay:'中继加密', thOp:'操作',
+    bbrBtn:'验证入口 BBR', exitTitle:'① 出口节点', thName:'名称', thAddr:'地址', thPort:'端口', thRelay:'中继加密', thOp:'操作',
     btnAddExit:'+ 添加出口节点', exitHint:'提示: 添加的出口默认启用「中继TLS加密」与「BBR」。SSH 密码在 ③ 部署时记录。',
-    inTitle:'② 入口端口 (用户连接的端口 → 分流到出口)', thExit:'分流到出口', thSec:'加密方式', thLink:'客户端链接 (点击复制)', thPortName:'端口/名称',
-    btnAddIn:'+ 添加入口端口', uuidTag:'全局客户端UUID (所有CN入口共用)', btnSaveUuid:'保存UUID',
-    provTitle:'③ 一键部署新出口服务器 (自动装Xray + TLS + BBR)', provSub:'填好信息点按钮, 面板自动: 加入出口节点(默认10443/TLS/BBR) → SSH 装 Xray 并配置接收入口中继 → 记录 SSH 凭据。',
+    inTitle:'② 入口端口', thExit:'分流到出口', thSec:'加密方式', thLink:'客户端链接 (点击复制)', thPortName:'端口/名称',
+    btnAddIn:'+ 添加入口端口', uuidTag:'全局客户端UUID (所有入口共用)', btnSaveUuid:'保存UUID',
+    provTitle:'③ 一键部署新出口服务器 (自动装Xray + TLS + BBR)', provSub:'填好信息点按钮, 面板自动: 加入出口节点(默认10443/TLS/BBR) → SSH 装 Xray 并接收入口中继 → 记录 SSH 凭据。',
     btnProv:'添加并部署', fwTitle:'防火墙管理 (开关 / 端口放行 / 禁止)', fwSub:'可管理入口与各出口的防火墙。启用前会自动放行 SSH(22)/面板(5000)/代理端口，避免锁死。基于 ufw。',
     fwEnable:'启用防火墙', fwDisable:'禁用防火墙', fwRefresh:'刷新状态', fwAllow:'放行', fwDeny:'禁止', fwApply:'应用规则', fwRule:'防火墙规则',
     fwHardenBtn:'一键加固防火墙', fwHardenSub:'对三台服务器放行上方展示的全部监听端口, 其余未使用端口全部拒绝 (default deny)。SSH/面板/代理端口均在放行列表中, 不会锁死。', fwHardenConfirm:'确认对三台服务器放行所有监听端口, 并拒绝其余端口?', fwHardenOk:'三台防火墙已加固',
@@ -2177,7 +2174,7 @@ const I18N = {
     siteSetTitle:'网站设置 (标题 / 页脚)', siteSetSub:'自定义面板的浏览器标签页标题和底部页脚文字。保存后即时生效，无需重启服务。', siteTitleLabel:'网站标题', siteFooterLabel:'页脚文字', siteSetSave:'保存网站设置', siteSavedOk:'网站设置已保存', siteSetEmpty:'标题与页脚不能都为空',
     backupTitle:'⑩ 备份与恢复', backupSub:'一键备份当前所有设置 (节点 / 入口端口 / 分流 / 对外域名 / 网站设置 / 安全), 可下载到本地; 也能从本地备份文件恢复。系统会维护一份出厂默认备份。', backupExport:'① 一键备份并下载', backupDefaultSave:'④ 保存为出厂默认备份', backupUpload:'② 上传备份文件', backupRestore:'③ 恢复设置', backupDefaultRestore:'⑤ 一键导入出厂默认设置', backupHint:'说明: ①~③ 为整机完整备份 (含服务器 IP/端口/密码/密钥, 仅限本机迁移); ④⑤ 出厂默认备份为“可移植模板”, 刻意剔除所有服务器 IP/端口/密码/密钥/凭据, 仅保留路由规则/智能路由/站点标题/页脚, 可安全用于其他或未来的服务器。恢复前建议先「一键备份并下载」以防丢失。', backupNoFile:'请选择备份文件', backupTime:'备份时间 ', backupReady:'已就绪, 可恢复', backupRestored:'已恢复', backupConfirmRestore:'确认用已上传的备份恢复所有设置? 当前设置将被覆盖 (建议先备份)。',     backupConfirmDefault:'将当前"可移植设置"(路由规则/智能路由/站点标题/页脚) 保存为出厂默认模板? 注意: 不会包含任何服务器 IP/端口/密码/密钥, 可安全用在其他服务器。此操作覆盖原有出厂默认。', backupConfirmImport:'确认导入出厂默认模板? 仅导入路由规则/智能路由/站点标题/页脚, 本机 IP/端口/密码/密钥/凭据保持不变。', backupSavedTitle:'已保存的服务器备份', backupSavedSub:'每次「一键备份并下载」会自动在此处保留一份服务器副本，可直接下载或恢复，也可删除释放空间。', backupSavedRefresh:'刷新备份列表', backupEmpty:'暂无已保存备份，点击上方「一键备份并下载」创建', backupFilename:'文件名', backupConfirmDelete:'确认删除此备份? 删除后不可恢复。',
     secTitle:'⑥ 账号与安全', secSub:'修改后台登录账号 / 密码, 以及面板的安全入口密令 (改后需重新登录)。', btnSaveSec:'保存安全设置',
-    phExitName:'出口名称(如俄罗斯)', secReality:'Reality 伪装(推荐)', secTls:'TLS 证书', secNone:'无加密',
+    phExitName:'出口名称(如HK节点)', secReality:'Reality 伪装(推荐)', secTls:'TLS 证书', secNone:'无加密',
     copied:'已复制链接', copyFail:'复制失败, 请手动选择', notActive:'无加密', reality:'Reality伪装', tls:'TLS',
     bbrOn:'已开启', bbrOff:'未开启', relayTls:'TLS加密', relayPlain:'明文',
     yes:'是', no:'否', fwOn:'已启用', fwOff:'未启用', fwNotInst:'未安装',
@@ -2192,7 +2189,7 @@ const I18N = {
     sshDownload:'下载私钥', sshCopy:'复制私钥', sshEnableKeyOnly:'启用仅密钥登录', sshDisableKeyOnly:'恢复密码登录',
     thTarget:'目标服务器', sshVaultTitle:'SSH 密钥库 (连接新出口用)', sshVaultSub:'上传私钥(权限600)供新出口选择使用；可删除释放磁盘。仅存文件名，私钥不对外展示。', sshUpload:'上传密钥', sshDelete:'删除',
     routeTitle:'⑧ 智能分流规则', routeSub:'按域名/IP/端口智能分流, 命中规则优先于"按入口端口"分流', routeEnable:'启用智能分流',
-    routeAdd:'+ 添加规则', routeApply:'保存并应用', routeHint:'示例: 域名后缀 tiktok.com → sg-out; GeoIP sg → direct',
+    routeAdd:'+ 添加规则', routeApply:'保存并应用', routeHint:'示例: 域名后缀 tiktok.com → exit-tag; GeoIP cn → direct',
     portsTitle:'⑨ 端口占用 (每台服务器当前监听的全部端口)', portsSub:'实时查询三台服务器所有监听端口(TCP/UDP)，含地址、协议与进程。SSH / 面板 / Xray 端口会标注。', portsRefresh:'刷新端口', portsNoData:'无监听端口', thProto:'协议', thAddr:'地址', thProc:'进程',
     bruteTitle:'暴力破解防护', bruteSub:'面板登录与 SSH 登录的暴力破解防护。规则: 60 秒内失败 17 次即封锁 17200 秒 (约 4.8 小时)。',
     brutePanel:'面板登录防护 (应用层)', bruteSsh:'SSH 登录防护 (fail2ban)', bruteTarget:'目标服务器',
@@ -2214,7 +2211,7 @@ const I18N = {
   },
   en: {
     appName:'x-cfui Panel', bbrTitle:'BBR Status', bbrSub:'BBR is a TCP congestion control algorithm. "Verify Entry BBR" checks the local entry server; each exit node table has its own "Verify BBR" button.',
-    bbrBtn:'Verify Entry BBR', exitTitle:'① Exit Nodes (entry relay targets / one-click BBR)', thName:'Name', thAddr:'Address', thPort:'Port', thRelay:'Relay', thOp:'Op',
+    bbrBtn:'Verify Entry BBR', exitTitle:'① Exit Nodes', thName:'Name', thAddr:'Address', thPort:'Port', thRelay:'Relay', thOp:'Op',
     btnAddExit:'+ Add Exit', exitHint:'Hint: added exits default to TLS relay + BBR. SSH password is recorded at ③ deploy.',
     inTitle:'② Entry Ports (client port → route to exit)', thExit:'Route to', thSec:'Encryption', thLink:'Client Link (click to copy)', thPortName:'Port/Name',
     btnAddIn:'+ Add Entry', uuidTag:'Global Client UUID (shared by all entries)', btnSaveUuid:'Save UUID',
@@ -2244,7 +2241,7 @@ const I18N = {
     sshDownload:'Download Key', sshCopy:'Copy Key', sshEnableKeyOnly:'Enable Key-Only', sshDisableKeyOnly:'Restore Password',
     thTarget:'Target', sshVaultTitle:'SSH Key Vault (for new exits)', sshVaultSub:'Upload private key (chmod 600) for new exits; delete to free disk. Only the filename is stored, key is not exposed.', sshUpload:'Upload Key', sshDelete:'Delete',
     routeTitle:'⑧ Smart Routing Rules', routeSub:'Route by domain/IP/port; matched rules take priority over per-port routing', routeEnable:'Enable smart routing',
-    routeAdd:'+ Add Rule', routeApply:'Save & Apply', routeHint:'e.g. domain_suffix tiktok.com → sg-out; GeoIP sg → direct',
+    routeAdd:'+ Add Rule', routeApply:'Save & Apply', routeHint:'e.g. domain_suffix tiktok.com → exit-tag; GeoIP cn → direct',
     portsTitle:'⑨ Port Usage (all listening ports per server)', portsSub:'Live query of all listening TCP/UDP ports on each of the three servers, with addr/proto/process. SSH/panel/Xray ports are tagged.', portsRefresh:'Refresh Ports', portsNoData:'No listening ports', thProto:'Proto', thAddr:'Address', thProc:'Process',
     bruteTitle:'Brute-force Protection', bruteSub:'Protection for panel login and SSH login brute-force. Rule: 17 failed attempts within 60s triggers a 17200s (≈4.8h) ban.',
     brutePanel:'Panel Login Protection (app-layer)', bruteSsh:'SSH Protection (fail2ban)', bruteTarget:'Target',
@@ -2371,7 +2368,7 @@ function fillExits(){
   STATE.exits.forEach(e=>{ ex.add(new Option(`${e.name} (${e.address}:${e.port})`, e.tag)); });
   const fw=document.getElementById('fw_target');
   fw.innerHTML='';
-  fw.add(new Option('入口服务器 (本机)', 'cn'));
+  fw.add(new Option('入口 (本机)', 'entry'));
   STATE.exits.forEach((e,i)=>{ fw.add(new Option(`${e.name} (${e.address})`, 'exit:'+i)); });
 }
 function secBadge(sec){ return sec==='reality'?'<span class="badge enc">'+t('reality')+'</span>':sec==='tls'?'<span class="badge enc">'+t('tls')+'</span>':'<span class="badge warn">'+t('notActive')+'</span>'; }
@@ -2611,7 +2608,7 @@ async function provisionExit(){
 // ---- firewall ----
 function fwTarget(){
   const v=document.getElementById('fw_target').value;
-  if(v==='cn') return {target:'cn'};
+  if(v==='entry' || v==='cn') return {target:'entry'};
   const i=parseInt(v.split(':')[1]);
   const e=STATE.exits[i];
   return {target:'exit', index:i, exit:e};
@@ -2628,7 +2625,7 @@ async function fwStatus(){
     if(tg.target==='exit') url+='&index='+tg.index;
     const r=await api(url);
     info.style.opacity='';
-    const who = (tg.target==='cn'?'入口':tg.exit.name);
+    const who = (tg.target==='entry'||tg.target==='cn') ? '入口' : (tg.exit?.name || '出口');
     if(!r.ok){ info.textContent=t('fwInfo')+': '+r.msg; out.style.display='none'; return; }
     if(!r.installed){
       info.textContent = who+' — '+t('fwNotInst');
@@ -2674,6 +2671,7 @@ async function fwRule(){
   const rule=document.getElementById('fw_rule').value;
   if(!port){ show('port?',false); return; }
   const btn = event.currentTarget;
+  const origText = btn.textContent;
   btn.disabled = true; btn.textContent = '⏳ 应用中...';
   try {
     const body={target:tg.target, action:rule, port, proto};
@@ -2720,11 +2718,11 @@ async function portsLoad(){
   const known={};
   const addKnown=(p,label)=>{ if(p) known[parseInt(p)]=label; };
   addKnown(5000,'面板');
-  addKnown(22022,'SSH-入口'); addKnown(23022,'SSH-出口A'); addKnown(24022,'SSH-出口B'); addKnown(22,'SSH');
+  addKnown(22,'SSH');
   (STATE&&STATE.inbounds||[]).forEach(b=>addKnown(b.port,'Xray入口'));
   (STATE&&STATE.exits||[]).forEach(e=>addKnown(e.port,'Xray出口'));
   let html='';
-  for(const k of ['cn','sg','ru']){
+  for(const k of Object.keys(servers)){
     const s=servers[k];
     if(!s) continue;
     html += `<h3 style="margin:12px 0 6px;color:var(--acc)">${s.name||k} <span class="tag">${s.host||''}</span></h3>`;
@@ -2755,13 +2753,12 @@ async function fwHarden(){
     if(!r.ok){ msg.textContent='✕ '+t('no'); show(t('fwTitle')+': '+(r.msg||''),false); return; }
     const res=r.results||{};
     let txt='';
-    for(const k of ['cn','sg','ru']){
+    for(const k of Object.keys(res)){
       const s=res[k]||{};
-      const name={cn:'入口',sg:'出口A',ru:'出口B'}[k]||k;
-      if(!s.ok){ txt+=`【${name}】✕ ${s.msg||'失败'}\n`; continue; }
+      if(!s.ok){ txt+=`【${k}】✕ ${s.msg||'失败'}\n`; continue; }
       const allowed=(s.allowed||[]).join(', ');
       const act=s.active?'启用':'未启用';
-      txt+=`【${name}】✓ 防火墙${act}, 已放行 ${s.allowed? s.allowed.length:0} 个端口: ${allowed}\n`;
+      txt+=`【${k}】✓ 防火墙${act}, 已放行 ${s.allowed? s.allowed.length:0} 个端口: ${allowed}\n`;
   }
   out.textContent=txt; out.style.display='block';
   msg.textContent='✓ '+t('fwHardenOk');
@@ -3251,7 +3248,7 @@ function renderRouteList(rules){
     types.forEach(t=>{ const o=document.createElement('option'); o.value=t[0]; o.textContent=t[1]; if(t[0]===r.type)o.selected=true; sel.appendChild(o); });
     sel.onchange = ()=>{ r.type = sel.value; };
     const val = document.createElement('input');
-    val.value = r.value || ''; val.placeholder = '匹配值 (如 tiktok.com / 1.2.3.0/24 / 出口A)'; val.style.minWidth='180px';
+    val.value = r.value || ''; val.placeholder = '匹配值 (如 tiktok.com / 1.2.3.0/24)'; val.style.minWidth='180px';
     val.oninput = ()=>{ r.value = val.value; };
     const arrow = document.createElement('span'); arrow.textContent = '→';
     const ob = document.createElement('select');
@@ -3515,8 +3512,8 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?",1)[1])
             except Exception:
                 q = {}
-            tgt = q.get("target", ["cn"])[0]
-            if tgt == "cn":
+            tgt = q.get("target", ["entry"])[0]
+            if tgt == "entry" or tgt == "cn":
                 res = fw_status_local()
             else:
                 try:
@@ -3535,8 +3532,8 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?",1)[1])
             except Exception:
                 q = {}
-            tgt = q.get("target", ["cn"])[0]
-            if tgt == "cn":
+            tgt = q.get("target", ["entry"])[0]
+            if tgt == "entry" or tgt == "cn":
                 self._send(200, autostart_local())
             else:
                 try:
@@ -3572,7 +3569,7 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?", 1)[1])
             except Exception:
                 q = {}
-            tgt = q.get("target", ["cn"])[0]
+            tgt = q.get("target", ["entry"])[0]
             self._send(200, ssh_brute_status(tgt))
             return
         if ap == "/api/ssh_ban_unban":
@@ -3583,7 +3580,7 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?", 1)[1])
             except Exception:
                 q = {}
-            tgt = q.get("target", ["cn"])[0]
+            tgt = q.get("target", ["entry"])[0]
             ip = (q.get("ip", [""])[0] or "").strip()
             self._send(200, ssh_ban_unban(tgt, ip))
             return
@@ -3614,27 +3611,28 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?", 1)[1])
             except Exception:
                 q = {}
-            tgt = q.get("target", ["cn"])[0]
+            tgt = q.get("target", ["entry"])[0]
             kind, ex = resolve_target(tgt)
             if kind is None:
                 self._send(200, {"ok": False, "msg": "未知服务器目标"}); return
             res = ssh_status(tgt)
-            res["host"] = CN_ADDR if kind == "cn" else (ex.get("address") if ex else tgt)
-            res["name"] = {"cn": "入口服务器", "sg": "出口节点A", "ru": "出口节点B"}.get(tgt, tgt)
+            res["host"] = CN_ADDR if kind == "entry" else (ex.get("address") if ex else tgt)
+            res["name"] = "入口服务器" if tgt == "entry" else (ex.get("name", tgt) if ex else tgt)
             self._send(200, res)
             return
         if ap == "/api/ports":
             if not self._auth():
                 self._send(401, {"ok": False, "msg": "未授权"}); return
             result = {}
-            for tgt in ("cn", "sg", "ru"):
+            st = load_state()
+            for tgt in ["entry"] + [e["tag"] for e in st.get("exits", [])]:
                 kind, ex = resolve_target(tgt)
                 if kind is None:
                     result[tgt] = {"ok": False, "msg": "未知服务器目标"}
                     continue
                 r = get_listening_ports(tgt)
-                r["host"] = CN_ADDR if kind == "cn" else (ex.get("address") if ex else tgt)
-                r["name"] = {"cn": "入口服务器", "sg": "出口节点A", "ru": "出口节点B"}.get(tgt, tgt)
+                r["host"] = CN_ADDR if kind == "entry" else (ex.get("address") if ex else tgt)
+                r["name"] = "入口服务器" if tgt == "entry" else (ex.get("name", tgt) if ex else tgt)
                 result[tgt] = r
             self._send(200, {"ok": True, "servers": result})
             return
@@ -3651,7 +3649,7 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?", 1)[1])
             except Exception:
                 q = {}
-            tgt = q.get("target", ["cn"])[0]
+            tgt = q.get("target", ["entry"])[0]
             res = ssh_download_key(tgt)
             self._send(200, res)
             return
@@ -3744,7 +3742,7 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?", 1)[1])
             except Exception:
                 pass
-            tgt = q.get("target", ["cn"])[0]
+            tgt = q.get("target", ["entry"])[0]
             res = machine_backup_list(tgt)
             res["target"] = tgt
             res["job"] = machine_jobs.get(tgt, {"state": "idle"})
@@ -3759,7 +3757,7 @@ class Handler(BaseHTTPRequestHandler):
                 q = parse_qs(self.path.split("?", 1)[1])
             except Exception:
                 pass
-            tgt = q.get("target", ["cn"])[0]
+            tgt = q.get("target", ["entry"])[0]
             fname = q.get("file", [""])[0]
             machine_backup_stream(tgt, fname, self)
             return
@@ -3802,7 +3800,7 @@ class Handler(BaseHTTPRequestHandler):
             if any(int(b["port"]) == int(data["port"]) for b in st["inbounds"]):
                 self._send(200, {"ok": False, "msg": f"端口 {data['port']} 已存在"}); return
             sec = data.get("security", "reality")
-            ib = {"port": int(data["port"]), "tag": "cn-" + str(data["port"]),
+            ib = {"port": int(data["port"]), "tag": "entry-" + str(data["port"]),
                   "name": data.get("name", "端口" + str(data["port"])), "exit": data["exit"], "security": sec}
             if sec == "reality":
                 pk, pubk = gen_reality_keypair()
@@ -3891,17 +3889,17 @@ class Handler(BaseHTTPRequestHandler):
             self._send(200, {"ok": True, "msg": "网站设置已保存", "site_title": st["site_title"], "site_footer": st["site_footer"]})
 
         elif p == "/api/ssh_set_port":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             res = ssh_set_port(tgt, data.get("port"))
             self._send(200, res)
 
         elif p == "/api/ssh_gen_key":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             res = ssh_gen_key(tgt)
             self._send(200, res)
 
         elif p == "/api/ssh_set_keyonly":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             enable = bool(data.get("enable"))
             res = ssh_set_keyonly(tgt, enable)
             self._send(200, res)
@@ -3973,9 +3971,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, {"ok": False, "msg": f"{ex['name']} BBR 开启失败", "log": log})
 
         elif p == "/api/firewall":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             action = data.get("action")
-            if tgt == "cn":
+            if tgt == "entry" or tgt == "cn":
                 extra = [load_state().get("cn_ssh_port", 22)] if action == "enable" else None
                 if action in ("enable", "disable"):
                     res = fw_operate_local(action, extra_ports=extra)
@@ -4117,7 +4115,7 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         elif p == "/api/ssh_brute_set":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             enable = bool(data.get("enable", False))
             res = ssh_brute_set(tgt, enable)
             self._send(200, res)
@@ -4139,9 +4137,10 @@ class Handler(BaseHTTPRequestHandler):
             save_brute_config(window, maxfail, ban)
             synced = []
             try:
-                for tgt in ("cn", "sg", "ru"):
-                    st = ssh_brute_status(tgt)
-                    if st.get("installed") and st.get("jail_on"):
+                st2 = load_state()
+                for tgt in ["entry"] + [e["tag"] for e in st2.get("exits", [])]:
+                    st_brute = ssh_brute_status(tgt)
+                    if st_brute.get("installed") and st_brute.get("jail_on"):
                         ssh_brute_set(tgt, True)
                         synced.append(tgt)
             except Exception:
@@ -4154,13 +4153,13 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         elif p == "/api/machine_backup/start":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             res = machine_backup_start(tgt)
             self._send(200, res)
             return
 
         elif p == "/api/machine_backup/delete":
-            tgt = data.get("target", "cn")
+            tgt = data.get("target", "entry")
             fname = (data.get("file") or "").strip()
             res = machine_backup_delete(tgt, fname)
             self._send(200, res)
