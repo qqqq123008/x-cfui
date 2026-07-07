@@ -58,7 +58,7 @@
 ### 方式一：从源码直接部署（推荐，全离线）
 
 ```bash
-git clone https://github.com/你的用户名/x-cfui.git
+git clone https://github.com/qqqq123008/x-cfui.git
 cd x-cfui/xray_admin
 sudo bash deploy_xcfui.sh
 ```
@@ -67,7 +67,7 @@ sudo bash deploy_xcfui.sh
 
 ### 方式二：下载烘焙成品
 
-从 [GitHub Releases](https://github.com/你的用户名/x-cfui/releases) 下载 `xcfui-deploy.sh`：
+从 [GitHub Releases](https://github.com/qqqq123008/x-cfui/releases) 下载 `xcfui-deploy.sh`：
 
 ```bash
 sudo bash xcfui-deploy.sh
