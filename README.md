@@ -95,13 +95,6 @@ sudo bash xcfui-restore.sh
 
 部署完成后访问：`http://服务器IP:5000/随机入口Token`
 
-### 搬家恢复（从旧机迁移到新机）
-
-```bash
-# 单文件，备份包已内嵌
-sudo bash xcfui-restore.sh
-```
-
 ---
 
 ## 🏗 架构
