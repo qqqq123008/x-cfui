@@ -77,13 +77,6 @@ sudo bash xcfui-deploy.sh
 
 两者完全相同，只是烘焙成品是 base64 封装的单文件。
 
-### 方式三：搬家恢复
-
-```bash
-# 从 Release 下载 xcfui-restore.sh（备份包已内嵌）
-sudo bash xcfui-restore.sh
-```
-
 脚本自动完成：
 - ✅ 安装 Xray + nginx + ufw + fail2ban
 - ✅ 随机生成面板入口、管理员账号/密码、客户端 UUID
