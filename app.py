@@ -1,19 +1,19 @@
-#!/usr/bin/env python3
+﻿#!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-x-cfui 管理面板 (入口控制器)
-零依赖: 仅用 Python 标准库 (http.server / ssl / base64 / subprocess)
-适配架构: 多端口入口 -> 不同出口节点
+x-cfui Management Panel (Entry Controller)
+Zero dependencies: Python stdlib only (http.server / ssl / base64 / subprocess)
+Architecture: Multi-port entry -> different exit nodes
 
-功能:
-  - 入口加密: 每个入口端口支持 none / reality(伪装) / tls(SSL)
-  - 中继加密: 入口 -> 出口节点 支持 tls(默认) / none, 自动向出口推送 TLS 配置
-  - 一键 BBR: 对任意出口节点 SSH 开启 BBR 拥塞控制
-  - 防火墙管理: 开关防火墙 / 端口放行 / 禁止 (入口本地 + 各出口 SSH)
-  - 开机自启核验: 逐项验证 Xray / BBR / 防火墙 是否开机自动启动
-  - 客户端伪装指纹 (uTLS fp) 注册到面板
-  - 主题(白天/夜间) 与 语言(中文/英文) 切换
-  - 账号 / 密令入口 / 客户端链接 均可在面板查看与修改
+Features:
+  - Entry encryption: each inbound port supports none / reality (spoofing) / tls (SSL)
+  - Relay encryption: entry -> exit node supports tls (default) / none, auto-push TLS config to exit
+  - One-click BBR: SSH into any exit node and enable BBR congestion control
+  - Firewall management: enable/disable firewall, allow/deny ports (local entry + all exits via SSH)
+  - Boot auto-start verification: check Xray / BBR / firewall auto-start status
+  - Client spoofing fingerprint (uTLS fp) registered to panel
+  - Theme (light/dark) and language (Chinese/English) toggle
+  - Account / entry token / client links can all be viewed and modified in panel
 """
 import json
 import os
@@ -72,7 +72,7 @@ RestartSec=3
 WantedBy=multi-user.target
 """
 
-# 出口服务器上的 Xray 服务单元 (注意: 不能复用 SERVICE_UNIT, 否则出口会去跑面板代码)
+# Xray service unit on exit servers (do not reuse SERVICE_UNIT, or exit will run panel code)
 XRAY_SERVICE_UNIT = """[Unit]
 Description=Xray Proxy Service (exit node)
 After=network.target
@@ -87,19 +87,19 @@ RestartSec=3
 WantedBy=multi-user.target
 """
 
-# 默认伪装域名池 (Reality 入口用, 选择高信誉站点)
+# Default disguise domain pool for Reality inbounds (high-reputation sites)
 REALITY_TARGETS = ["www.microsoft.com", "www.apple.com", "github.com", "www.cloudflare.com"]
 
-# ufw 启用前自动放行的关键端口 (避免锁死 SSH/面板/代理)
+# Critical ports to allow before enabling ufw (avoid locking out SSH/panel/proxy)
 FW_ALLOW_BASE = ["22/tcp", "5000/tcp", "443/tcp", "8443/tcp", "10443/tcp"]
 
-# ---- SSH 安全加固相关 (面板管理密钥 / 服务器地址映射) ----
+# ---- SSH Hardening (panel management keys / server address mapping) ----
 PANEL_KEY = "/root/.ssh/xcfui_ed25519"          # 面板自身的管理私钥(入口机上生成)
 PANEL_PUB = PANEL_KEY + ".pub"
 SSH_KEY_DIR = "/opt/x-cfui/ssh_keys"            # 用户上传的连接用密钥库(用于新出口等)
 HOST_KEY_DIR = "/opt/x-cfui/host_keys"          # 三台服务器当前登录私钥(供面板下载备份)
-# 节点地址不再写死任何生产 IP: 运行时完全由 state.json 的 cn_addr 驱动。
-# 这里仅保留占位默认值(空串); deploy/restore 脚本都会把真实公网 IP 写入 state.json。
+# Node addresses are not hardcoded: runtime driven by state.json cn_addr field.
+# Placeholder defaults only; deploy/restore scripts write real public IPs to state.json.
 CN_ADDR = ""
 
 
@@ -125,7 +125,7 @@ def _resolve_key(name):
     return p if os.path.abspath(p).startswith(os.path.abspath(SSH_KEY_DIR) + os.sep) else None
 
 
-# ---- SSH 密钥库 (用户上传的连接用私钥: 用于新出口/自定义连接) ----
+# ---- SSH Key Store (user-uploaded private keys for new exits/custom connections) ----
 def list_ssh_keys():
     """列出密钥库中的私钥文件(名称/大小/修改时间), 不含内容"""
     try:
@@ -275,10 +275,10 @@ def save_state(state):
         json.dump(state, f, indent=2, ensure_ascii=False)
 
 
-# ===================== 节点地址: 运行时优先从 state.json 读取 =====================
-# CN_ADDR 从 state.json.cn_addr 读取(由 deploy/restore 脚本自动写入)
-# 且 bug 会随备份包一起被打包。现在改为优先读 state.json 的 cn_addr/sg_addr/ru_addr 字段,
-# 恢复时只需更新数据文件(写 state.json)即可改 IP, 无需改动源码本身。源码中的字面量仅作首次部署兜底。
+# ===================== Node Addresses: Runtime priority from state.json =====================
+# CN_ADDR read from state.json.cn_addr (written by deploy/restore scripts)
+# Now prefers state.json cn_addr/sg_addr/ru_addr fields for backup portability.
+# Restore only needs to update state.json to change IPs, no source code changes needed.
 try:
     _node_state = load_state()
     if _node_state.get("cn_addr"):
@@ -294,7 +294,7 @@ def gen_reality_keypair():
         raise RuntimeError("xray x25519 执行失败: " + r.stderr)
     priv = pub = None
     for line in r.stdout.splitlines():
-        # 注意: xray 输出格式为 "PrivateKey:" / "Password (PublicKey):" (无空格)
+        # Note: xray output format is "PrivateKey:" / "Password (PublicKey):" (no space)
         if line.startswith("PrivateKey:"):
             priv = line.split(":", 1)[1].strip()
         elif line.startswith("Password (PublicKey):"):
@@ -321,7 +321,7 @@ def ensure_cn_cert():
     return cert, key
 
 
-# ------------------------------------------------------------------- 出口配置
+# ------------------------------------------------------------------- Exit Node Config
 def render_exit_config(exit_info):
     """生成出口服务器的 xray config (接收入口中继)"""
     sec = exit_info.get("relay_security", "tls")
@@ -354,7 +354,7 @@ def push_exit_config(exit_info, ssh_pass, ssh_user="root", ssh_port=22, key=None
     script = f"""set -e
 export DEBIAN_FRONTEND=noninteractive
 mkdir -p /usr/local/etc/xray
-# 自签证书 (中继 TLS 用)
+# Self-signed certificate (for relay TLS)
 if [ ! -f /usr/local/etc/xray/cert.pem ]; then
   apt-get install -y -qq openssl >/dev/null 2>&1 || true
   openssl ecparam -genkey -name prime256v1 -out /usr/local/etc/xray/key.pem 2>/dev/null
@@ -367,7 +367,7 @@ cat > /etc/sysctl.d/99-bbr.conf <<'BEOF'
 {BBR_CONF}BEOF
 sysctl -p /etc/sysctl.d/99-bbr.conf >/dev/null 2>&1
 modprobe tcp_bbr 2>/dev/null || true
-# 确保出口 xray 服务单元正确 (不能用面板的 SERVICE_UNIT)
+# Ensure exit xray service unit is correct (cannot use panel's SERVICE_UNIT)
 cat > /etc/systemd/system/xray.service <<'XSEOF'
 {XRAY_SERVICE_UNIT}XSEOF
 systemctl daemon-reload
@@ -470,12 +470,12 @@ echo "DONE: $(/usr/local/bin/xray version | head -1) cca=$(sysctl -n net.ipv4.tc
         return False, f"异常: {e}"
 
 
-# ------------------------------------------------------------------- 防火墙管理
+# ------------------------------------------------------------------- Firewall Management
 def build_fw_script(action=None, port=None, proto="tcp", extra_ports=None):
     """生成防火墙操作脚本 (统一用于本地/远程)。action: enable/disable/allow/deny/None(仅查状态)"""
     head = ["export DEBIAN_FRONTEND=noninteractive"]
     if action is not None:
-        # 仅在执行实际操作时才安装 ufw, 单纯查状态不应触发安装
+        # Only install ufw when performing actual operations, status check should not trigger install
         head.append("command -v ufw >/dev/null 2>&1 || (apt-get update -qq && apt-get install -y -qq ufw) >/dev/null 2>&1")
     body = []
     if action == "enable":
@@ -504,7 +504,7 @@ def _parse_fw_status(out):
     for ln in lines:
         if ln.startswith("INSTALLED="):
             d["installed"] = ("yes" in ln)
-        # build_fw_script 将 INSTALLED=与 ACTIVE= 输出在同一行, 故用子串匹配
+        # build_fw_script outputs INSTALLED= and ACTIVE= on same line, use substring match
         if "ACTIVE=yes" in ln:
             d["active"] = True
         elif "ACTIVE=no" in ln:
@@ -615,8 +615,8 @@ def fw_harden(target, allow_ports):
     rc, out, err = ssh_exec(target, script, timeout=120)
     if rc != 0:
         return {"ok": False, "msg": (err.strip() or "执行失败"), "allowed": allow_ports}
-    # 二次状态查询(全新连接): ufw --force enable 可能杀死本脚本的 SSH 会话,
-    # 导致首次回显的 active 误报为 False, 故用独立查询拿到真实状态
+    # Second status check (fresh connection): ufw --force enable may kill SSH session,
+    # causing first active response to be False, so use independent query for real status
     rc2, out2, _ = ssh_exec(target, build_fw_script(None), timeout=60)
     status = _parse_fw_status(out2) if rc2 == 0 else _parse_fw_status(out)
     return {"ok": True, "allowed": allow_ports, **status}
@@ -636,7 +636,7 @@ def fw_harden_all():
     return res
 
 
-# ------------------------------------------------------------------- GeoIP 有效性校验
+# ------------------------------------------------------------------- GeoIP Validation
 _GEOIP_CACHE = {"mtime": 0.0, "ok": None, "ts": 0.0}
 def geoip_is_valid():
     """校验 geoip.dat 是否真实可被 xray 加载(而非仅文件存在)。
@@ -669,7 +669,7 @@ def geoip_is_valid():
             json.dump(cfg_obj, f); cfg = f.name
         proc = subprocess.run([XRAY_BIN, "run", "-test", "-config", cfg],
                               capture_output=True, text=True, timeout=30)
-        # 唯一失败信号: xray 报 'code not found' -> 文件不含该国家代码(格式不对)
+        # Only failure signal: xray reports 'code not found' -> file missing that country code (invalid format)
         ok = "code not found" not in (proc.stdout + proc.stderr)
     except Exception:
         ok = False
@@ -681,7 +681,7 @@ def geoip_is_valid():
     return ok
 
 
-# ------------------------------------------------------------------- 开机自启核验
+# ------------------------------------------------------------------- Boot Auto-Start Verification
 def autostart_local():
     def se(s):
         r = subprocess.run(["systemctl", "is-enabled", s], capture_output=True, text=True)
@@ -746,7 +746,7 @@ printf "XE=%s\\nXA=%s\\nBP=%s\\nBC=%s\\nFW=%s\\nNP=%s" "$XE" "$XA" "$BP" "$BC" "
         return {"ok": False, "msg": str(e)}
 
 
-# ------------------------------------------------------------------- 配置生成
+# ------------------------------------------------------------------- Config Generation
 def bbr_status():
     """返回本机 BBR 当前状态与是否开机持久化"""
     try:
@@ -798,7 +798,7 @@ echo "cca=$cca qdisc=$qdisc persisted=$persisted mod=$mod"
         return {"ok": False, "msg": str(e)}
 
 
-# ------------------------------------------------------------------- SSH 安全加固
+# ------------------------------------------------------------------- SSH Hardening
 def ssh_exec(target, script, timeout=60):
     """在指定服务器上执行脚本: 入口本地执行, 出口通过面板管理密钥或密码 SSH"""
     kind, ex = resolve_target(target)
@@ -818,7 +818,7 @@ def ssh_exec(target, script, timeout=60):
     return -1, "", "target 解析失败"
 
 
-# ---- 整机完整备份 (tar 全文件系统, 存于目标服务器本地) ----
+# ---- Full Machine Backup (tar entire filesystem, stored on target server locally) ----
 def _load_machine_jobs():
     global machine_jobs
     try:
@@ -895,16 +895,16 @@ def _machine_backup_worker(target):
             'FIN="$D/machine_full_${TS}.tar.gz"\n'
             'META="/opt/x-cfui/.machine_backup_meta"\n'
             'mkdir -p "$META"\n'
-            # 导出活动防火墙规则 (iptables / nftables)
+            # Export active firewall rules (iptables / nftables)
             'iptables-save > "$META/firewall_iptables.save" 2>/dev/null || true\n'
             'nft list ruleset > "$META/firewall_nft.save" 2>/dev/null || true\n'
-            # 生成清单
+            # Generate manifest
             '{\n'
             '  echo "x-cfui 应用与配置备份 (不含 Debian 系统文件)";\n'
             '  echo "生成时间: $(date)"; echo "主机名: $(hostname)";\n'
             '  echo "包含: 面板设置(state.json)/防火墙/xray分流与证书/SSH密钥(身份+主机)/SSH加固/fail2ban/BBR/sysctl/nginx网站/系统服务";\n'
             '} > "$META/MANIFEST.txt"\n'
-            # 构造要备份的路径清单 (完整应用与配置)
+            # Build list of paths to backup (full apps and configs)
             'LIST=$(mktemp); EXCL=$(mktemp)\n'
             'echo "/opt/x-cfui/machine_backups" > "$EXCL"\n'
             'for p in \\\n'
@@ -945,7 +945,7 @@ def _machine_backup_worker(target):
             '  "$META" ; do\n'
             '  [ -e "$p" ] && echo "$p"\n'
             'done > "$LIST"\n'
-            # 打包 (排除大文件/递归/临时; 含全部应用与配置)
+            # Pack (exclude large files/recursive/temp; include all apps and configs)
             'tar --numeric-owner \\\n'
             '  --exclude="opt/x-cfui/machine_backups" \\\n'
             '  --exclude="opt/x-cfui/__pycache__" \\\n'
@@ -1008,7 +1008,7 @@ def machine_backup_start(target):
         cur = machine_jobs.get(target, {})
         if cur.get("state") == "running":
             return {"ok": False, "msg": "该服务器整机备份正在进行中, 请稍候"}
-        # 清理旧的错误/完成态, 允许重新发起
+        # Clean old error/completed states, allow re-initiation
         machine_jobs.pop(target, None)
     t = threading.Thread(target=_machine_backup_worker, args=(target,), daemon=True)
     t.start()
@@ -1068,7 +1068,7 @@ def machine_backup_stream(target, filename, handler):
                 except Exception:
                     return
         return
-    # 远程: 先校验存在, 再流式 cat
+    # Remote: verify existence first, then stream via cat
     size = machine_backup_remote_size(target, name)
     if size is None:
         handler._send(404, {"ok": False, "msg": "备份文件不存在或查询失败"}); return
@@ -1149,7 +1149,7 @@ def get_listening_ports(target):
         if not line or line.startswith("Netid") or line.startswith("State") or line.startswith("Proto"):
             continue
         parts = line.split()
-        # ss 列: Netid State Recv-Q Send-Q Local:Port Peer:Port Process
+        # ss columns: Netid State Recv-Q Send-Q Local:Port Peer:Port Process
         if len(parts) < 5:
             continue
         proto = parts[0]
@@ -1272,7 +1272,7 @@ rm -f $KF
             pub = ln[4:].strip()
     if not priv:
         return {"ok": False, "msg": "未能读取私钥: " + out[:200]}
-    # 持久化当前私钥到面板主机密钥库, 供"下载当前密钥"使用(与服务器临时文件删除解耦)
+    # Persist current private key to panel host key store for "download current key" (decoupled from server temp file deletion)
     persist_msg = ""
     try:
         os.makedirs(HOST_KEY_DIR, exist_ok=True)
@@ -1396,7 +1396,7 @@ def ssh_set_keyonly(target, enable):
         return {"ok": True, "msg": "已恢复允许密码登录"}
 
 
-# ---- SSH 暴力破解防护 (fail2ban) ----
+# ---- SSH Brute-Force Protection (fail2ban) ----
 def ssh_brute_status(target):
     """查询 fail2ban sshd 防护状态与被封 IP 列表"""
     script = r'''
@@ -1550,7 +1550,7 @@ def build_xray_config(state):
         else:
             orphan.append(ib["port"])
 
-    # 用户自定义智能分流规则(按域名/IP/端口), 优先级高于按入口端口
+    # User-defined smart routing rules (by domain/IP/port), higher priority than port-based rules
     need_block = False
     has_ip_rule = False
     user_rules = []
@@ -1582,12 +1582,12 @@ def build_xray_config(state):
                 need_block = True
     if need_block and not any(o.get("tag") == "block" for o in outbounds):
         outbounds.append({"protocol": "blackhole", "tag": "block"})
-    # 智能规则插入到按端口规则之前(优先级更高)
+    # Smart rules inserted before port-based rules (higher priority)
     rules = user_rules + rules
 
-    # 兜底: 未匹配任何入口规则的流量走直连, 避免误路由到首个出口
+    # Fallback: traffic not matching any inbound rule goes direct, avoid misrouting to first exit
     rules.append({"type": "field", "ip": ["0.0.0.0/0", "::/0"], "outboundTag": "direct"})
-    # 含 IP/GeoIP 规则时需先解析域名才能匹配; 纯域名规则保持 AsIs 以降低延迟
+    # With IP/GeoIP rules, domains must be resolved first; pure domain rules stay AsIs for lower latency
     domain_strategy = "IPIfNonMatch" if has_ip_rule else "AsIs"
     return {
         "log": {"loglevel": "info"},
@@ -1629,7 +1629,7 @@ def apply_config(state, backup=True):
             subprocess.run(["cp", bak, XRAY_CONFIG], check=False)
             subprocess.run(["systemctl", "restart", SERVICE], capture_output=True, text=True)
         return False, f"重启 xray 失败, 已回滚: {r.stderr}"
-    # Type=simple 下 restart 返回 0 不代表进程存活, 必须校验 is-active
+    # With Type=simple, restart returning 0 does not mean process is alive, must verify is-active
     time.sleep(1.5)
     st = subprocess.run(["systemctl", "is-active", SERVICE], capture_output=True, text=True)
     if st.stdout.strip() != "active":
@@ -1641,7 +1641,7 @@ def apply_config(state, backup=True):
     return True, "配置已应用, xray 已重启 (含中继TLS/入口加密)" + note
 
 
-# ------------------------------------------------------------------- 备份 / 恢复
+# ------------------------------------------------------------------- Backup / Restore
 def _ensure_backup_dir():
     os.makedirs(BACKUP_DIR, exist_ok=True)
 
@@ -1689,9 +1689,9 @@ def _apply_backup(data):
     return apply_config(st, backup=True)
 
 
-# 出厂默认设置 = 可移植“模板”，剔除一切服务器身份与凭据字段
-# (IP / 端口 / 密码 / 密钥 / 入口口令 / 客户端UUID 等)，
-# 因为其他服务器或未来的服务器这些信息完全不同，绝不能带入模板。
+# Factory defaults = portable "template" without any server identity or credential fields
+# (IP / port / password / key / entry token / client UUID etc.),
+# as other/future servers have completely different values, must not be in template.
 TEMPLATE_FIELDS = ("routing_rules", "smart_routing", "site_title", "site_footer")
 
 
@@ -3293,7 +3293,7 @@ def entry_token():
         return "aa888888"
 
 
-# ---- 登录暴力破解防护 (应用层限流 + 持久化封禁) ----
+# ---- Login Brute-Force Protection (app-layer rate limiting + persistent ban) ----
 BAN_FILE = os.path.join(BASE, "ban.json")
 LOGIN_FAIL = {}      # ip -> [失败时间戳...]  (内存, 仅统计当前窗口)
 LOGIN_BAN = {}       # ip -> 解封时间戳(unix) (持久化, 重启仍生效)
@@ -3451,7 +3451,7 @@ class Handler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         ap = self._api_path()
-        # 封锁管理接口: 需正确鉴权, 允许管理员自救(绕过 IP 封锁)
+        # Ban management endpoint: requires auth, allows admin self-rescue (bypass IP ban)
         if ap == "/api/ban_list":
             if not self._auth():
                 self._send(401, {"ok": False, "msg": "未授权"}); return
@@ -3460,7 +3460,7 @@ class Handler(BaseHTTPRequestHandler):
             if not self._auth():
                 self._send(401, {"ok": False, "msg": "未授权"}); return
             self._do_ban_unban(); return
-        # IP 封锁检查(应用层暴力破解防护)
+        # IP ban check (app-layer brute-force protection)
         if self._check_ban():
             return
         token = entry_token()
@@ -3550,7 +3550,7 @@ class Handler(BaseHTTPRequestHandler):
             res = [autostart_local()]
             st = load_state()
             for i, ex in enumerate(st["exits"]):
-                # 优先用面板管理密钥(-i PANEL_KEY), 即使 state 中未存 ssh_pass 也能管理仅密钥登录的服务器
+                # Prefer panel management key (-i PANEL_KEY), works even if ssh_pass not in state
                 r = autostart_remote(ex["address"], ex.get("ssh_pass",""), ex.get("ssh_user","root"), ex.get("ssh_port",22), key=ex.get("ssh_key"))
                 r["host"] = ex["address"]; r["name"] = ex["name"]
                 res.append(r)
@@ -3673,7 +3673,7 @@ class Handler(BaseHTTPRequestHandler):
             data = _collect_backup()
             body = json.dumps(data, ensure_ascii=False, indent=2).encode("utf-8")
             fname = "xcfui_backup_%s.json" % time.strftime("%Y%m%d_%H%M%S")
-            # 同时保存到服务器备份目录
+            # Also save to server backup directory
             try:
                 os.makedirs(BACKUP_DIR, exist_ok=True)
                 save_path = os.path.join(BACKUP_DIR, fname)
@@ -3764,12 +3764,12 @@ class Handler(BaseHTTPRequestHandler):
         self._send(404, {"ok": False, "msg": "not found"})
 
     def do_POST(self):
-        # 面板登录封锁管理接口(解封): 需正确鉴权后绕过 IP 封锁
+        # Panel login ban management endpoint (unban): requires auth then bypass IP ban
         if self._api_path() == "/api/ban_unban":
             if not self._auth():
                 self._send(401, {"ok": False, "msg": "未授权"}); return
             self._do_ban_unban(); return
-        # IP 封锁检查(应用层暴力破解防护)
+        # IP ban check (app-layer brute-force protection)
         if self._check_ban():
             return
         if not self._auth():
@@ -4001,7 +4001,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._send(200, res)
 
         elif p == "/api/firewall_harden":
-            # 一键加固: 放行三台服务器正在监听的全部端口, 拒绝其余端口
+            # One-click harden: allow all listening ports on all three servers, deny the rest
             res = fw_harden_all()
             self._send(200, {"ok": True, "results": res})
 
@@ -4180,7 +4180,7 @@ class Handler(BaseHTTPRequestHandler):
                 clean.append({"id": "r%d" % (i + 1), "type": rt, "value": rv,
                               "outbound": ob, "enabled": bool(r.get("enabled", True))})
             st["routing_rules"] = clean
-            # GeoIP 规则依赖 geoip.dat, 缺失/无效时应用会拖崩 xray, 故先拦截
+            # GeoIP rules require geoip.dat, missing/invalid will crash xray, so block early
             if any(r["type"] == "geoip" for r in clean):
                 if not geoip_is_valid():
                     self._send(200, {"ok": False,
@@ -4232,7 +4232,7 @@ class Handler(BaseHTTPRequestHandler):
 def main():
     os.makedirs(BASE, exist_ok=True)
     load_state()
-    # 加载整机备份任务状态: 若上次进程遗留 running(服务重启导致中断), 标记为 error 避免永久阻塞
+    # Load full backup task state: if previous process left running (interrupted by restart), mark as error to avoid permanent block
     _load_machine_jobs()
     for _t, _j in list(machine_jobs.items()):
         if _j.get("state") == "running":

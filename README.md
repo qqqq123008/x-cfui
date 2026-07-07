@@ -1,25 +1,6 @@
-# x-cfui — Xray 中继管理面板
+# x-cfui — Xray Relay Management Panel
 
-## ⚠️ 法律声明 / Legal Notice
-
-**【中文】**
-
-本项目仅供以下合法用途：
-- ✅ 企业跨境办公网络加速
-- ✅ 学术研究与网络技术研究
-- ✅ 个人网络架构学习与实践
-- ✅ 其他符合使用者所在国家/地区法律法规的用途
-
-**禁止用于任何非法用途，包括但不限于：**
-- ❌ 绕过国家网络审查
-- ❌ 访问被法律禁止的网站与内容
-- ❌ 从事任何违法犯罪活动
-
-**使用者需遵守所在国家/地区的法律法规。开发者不对任何因非法使用本项目导致的后果承担责任。使用本项目即表示您已阅读并同意遵守相关法律规定。**
-
----
-
-**【English】**
+## ⚠️ Legal Notice
 
 This project is intended for lawful purposes only:
 - ✅ Enterprise cross-border office network acceleration
@@ -36,8 +17,8 @@ This project is intended for lawful purposes only:
 
 ---
 
-> 一款轻量级、全功能、单文件的 Xray 中继管理面板。  
-> 一通操作即可完成部署，开箱即用。
+> A lightweight, full-featured, single-file Xray relay management panel.
+> Deploy in one command, ready to use out of the box.
 
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Python](https://img.shields.io/badge/python-3.9%2B-blue)](https://python.org)
@@ -45,156 +26,155 @@ This project is intended for lawful purposes only:
 
 ---
 
-## 📸 截图
+## 📸 Screenshots
 
-| 节点管理 | 分流设置 | 客户端设置 |
-|-------|---------|-----------|
+| Node Management | Routing Settings | Client Settings |
+|-----------------|------------------|-----------------|
 | ![screenshot](docs/screenshots/main.png) | ![screenshot](docs/screenshots/nodes.png) | ![screenshot](docs/screenshots/clients.png) |
 
 ---
 
-## ✨ 特色
+## ✨ Features
 
-### 全功能面板
-- **单文件架构** — 整个面板只有一个 `app.py`（Python Flask），后端 + 前端 + HTML/CSS/JS + 国际化全部内聚
-- **轻量极速** — 源文件仅 217KB，零外部前端依赖
-- **一键部署** — 一条命令完成面板 + Xray + 防火墙 + BBR + fail2ban 全套部署
-- **离线可用** — 所有依赖（Xray 二进制、Python 库）打包内嵌，无需网络下载
+### Full-Featured Panel
+- **Single-File Architecture** — The entire panel is just one `app.py` (Python Flask), with backend + frontend + HTML/CSS/JS + i18n all embedded
+- **Lightweight & Fast** — Source file only 217KB, zero external frontend dependencies
+- **One-Click Deploy** — Single command deploys panel + Xray + firewall + BBR + fail2ban
+- **Offline Ready** — All dependencies (Xray binary, Python libs) bundled, no network downloads needed
 
-### 多节点中继管理
-- 管理 **入口服务器 / 出口节点A / 出口节点B** 三台服务器
-- 支持 **VMess / VLESS / Shadowsocks / Trojan / Hysteria2 / WireGuard** 等多种协议
-- 自动生成 **Reality** 配置（TLS 指纹伪装）
-- 出口节点 BBR 状态一键验证
-- 节点名称可编辑
+### Multi-Node Relay Management
+- Manage **Entry Server / Exit Node A / Exit Node B** across three servers
+- Supports **VMess / VLESS / Shadowsocks / Trojan / Hysteria2 / WireGuard** and more
+- Auto-generate **Reality** config (TLS fingerprint spoofing)
+- One-click BBR status verification for exit nodes
+- Editable node names
 
-### 安全防护
-- **面板登录暴力破解防护** — 60 秒内 17 次失败自动封禁 17200 秒（参数可配）
-- **SSH 防暴（fail2ban）** — 三台服务器统一配置，参数与面板同步
-- **UFW 防火墙** — 端口规则自动管理
-- **SSH 安全加固** — 一键启用仅密钥登录、修改端口
+### Security Protection
+- **Panel Login Brute-Force Protection** — Auto-ban after 17 failed attempts in 60 seconds (configurable)
+- **SSH Brute-Force Protection (fail2ban)** — Unified config across all three servers
+- **UFW Firewall** — Automatic port rule management
+- **SSH Hardening** — One-click enable key-only auth, change port
 
-### 系统运维
-- **整机配置备份/恢复** — 一键备份面板 + 系统全部配置（455 项），支持离线搬家
-- **官方出厂模板** — 可移植的分流/站点配置模板，不含服务器身份凭据
-- **开机自启核验** — 一键检查三台服务器服务状态
-- **端口占用检测** — 实时查看端口使用情况
-- **GeoIP 数据库管理** — 在线更新 geoip.dat / geosite.dat
+### System Operations
+- **Full Config Backup/Restore** — One-click backup of panel + system configs (455 items), supports offline migration
+- **Factory Template** — Portable routing/site config templates without server credentials
+- **Boot Auto-Start Verification** — One-click check service status on all three servers
+- **Port Usage Detection** — Real-time port usage monitoring
+- **GeoIP Database Management** — Online update of geoip.dat / geosite.dat
 
-### 客户端连接
-- 支持多域名/多地址管理（增删）
-- 自动生成各协议连接串 + QR 码
-- 支持 PC / 安卓 / iOS 客户端订阅
-- 中英文界面一键切换
+### Client Connections
+- Multi-domain/multi-address management (add/delete)
+- Auto-generate connection strings + QR codes for all protocols
+- PC / Android / iOS client subscriptions supported
+- One-click switch between Chinese/English UI
 
 ---
 
-## 🚀 快速开始
+## 🚀 Quick Start
 
-### 方式一：从源码直接部署（推荐，全离线）
+### Method 1: Deploy from Source (Recommended, Fully Offline)
 
 ```bash
 git clone https://github.com/qqqq123008/x-cfui.git
-cd x-cfui/xray_admin
+cd x-cfui
 sudo bash deploy_xcfui.sh
 ```
 
-> `deploy_xcfui.sh` 已内嵌 Xray 二进制 + segno 库，全程离线可用，无需任何网络下载。
+> `deploy_xcfui.sh` has Xray binary + segno library embedded, fully offline, no network downloads needed.
 
-### 方式二：下载烘焙成品
+### Method 2: Download Pre-Built Release
 
-从 [GitHub Releases](https://github.com/qqqq123008/x-cfui/releases) 下载 `xcfui-deploy.sh`：
+Download `xcfui-deploy.sh` from [GitHub Releases](https://github.com/qqqq123008/x-cfui/releases):
 
 ```bash
 sudo bash xcfui-deploy.sh
 ```
 
-两者完全相同，只是烘焙成品是 base64 封装的单文件。
+Both are identical — the pre-built release is just a base64-wrapped single file.
 
-脚本自动完成：
-- ✅ 安装 Xray + nginx + ufw + fail2ban
-- ✅ 随机生成面板入口、管理员账号/密码、客户端 UUID
-- ✅ 配置 BBR TCP 加速
-- ✅ 配置防火墙放行端口
-- ✅ 配置 fail2ban 暴力破解防护
-- ✅ 注册 systemd 服务，开机自启
-- ✅ 启动面板（默认端口 5000）
+The script automatically:
+- ✅ Installs Xray + nginx + ufw + fail2ban
+- ✅ Generates random panel entry, admin credentials, client UUID
+- ✅ Configures BBR TCP acceleration
+- ✅ Opens firewall ports
+- ✅ Configures fail2ban brute-force protection
+- ✅ Registers systemd service for auto-start on boot
+- ✅ Starts the panel (default port 5000)
 
-部署完成后访问：`http://服务器IP:5000/随机入口Token`
+After deployment, visit: `http://SERVER_IP:5000/RANDOM_ENTRY_TOKEN`
 
 ---
 
-## 🏗 架构
+## 🏗 Architecture
 
 ```
 ┌─────────────┐     ┌─────────────┐     ┌─────────────┐
-│  客户端     │────▶│  入口服务器    │────▶│  出口节点A    │
-│ (v2rayNG)   │     │  (面板)     │     │  (中继)     │
-│ (Shadowrocket) │   │  xray      │     │  xray       │
+│   Client    │────▶│Entry Server │────▶│ Exit Node A │
+│  (v2rayNG)  │     │   (Panel)   │     │   (Relay)   │
+│(Shadowrocket│     │    xray     │     │    xray     │
 └─────────────┘     └─────────────┘     └─────────────┘
                            │
                            ▼
                     ┌─────────────┐
-                    │  出口节点B   │
-                    │  (中继)     │
+                    │ Exit Node B │
+                    │   (Relay)   │
                     └─────────────┘
 ```
 
-- **入口服务器**：面板所在服务器，客户端直接连接，负责流量分发
-- **出口节点A / 出口节点B**：中继节点，处理实际代理请求
+- **Entry Server**: The server hosting the panel, clients connect directly, handles traffic distribution
+- **Exit Node A / Exit Node B**: Relay nodes that process actual proxy requests
 
 ---
 
-## 🧩 技术栈
+## 🧩 Tech Stack
 
-| 组件 | 技术 |
-|------|------|
-| 后端框架 | Python Flask（内嵌于 app.py） |
-| 前端 | 原生 HTML + CSS + JavaScript（无框架） |
-| 二维码 | segno (Python) |
-| 国际化 | 内建中/英双语言（i18n） |
-| 代理核心 | Xray-core v26.3.27 |
-| 防火墙 | ufw + nftables |
-| 防护 | fail2ban |
-| TCP 加速 | BBR |
+| Component | Technology |
+|-----------|------------|
+| Backend Framework | Python Flask (embedded in app.py) |
+| Frontend | Native HTML + CSS + JavaScript (no framework) |
+| QR Code | segno (Python) |
+| i18n | Built-in Chinese/English dual language |
+| Proxy Core | Xray-core v26.3.27 |
+| Firewall | ufw + nftables |
+| Protection | fail2ban |
+| TCP Acceleration | BBR |
 
 ---
 
-
-## 🔧 开发
+## 🔧 Development
 
 ```bash
-# 1. 修改 app.py
+# 1. Edit app.py
 vim app.py
 
-# 2. 语法检查
+# 2. Syntax check
 python3 -m py_compile app.py
 
-# 3. 静态审计
+# 3. Static audit
 python3 audit_panel.py
 
-# 4. 烘焙单文件脚本（可选）
+# 4. Build single-file script (optional)
 python3 make_xcfui.py
 
-# 5. 推送到服务器测试
+# 5. Push to server for testing
 python3 deploy_panel.py
 ```
 
 ---
 
-## 📋 To-do / Roadmap
+## 📋 Roadmap
 
-- [x] 面板基础框架（节点管理、客户端链接、QR 码）
-- [x] 多节点管理与状态监测
-- [x] 暴力破解防护 + fail2ban 集成
-- [x] 整机配置备份/恢复/搬家
-- [x] SSH 安全加固
-- [x] 开机自启核验
-- [x] 导航分类 UI 重构
-- [x] 客户端多地址支持
-- [x] 离线部署（内嵌 Xray + segno）
-- [x] 服务状态同步搬家
-- [ ] ……
+- [x] Panel core framework (node management, client links, QR codes)
+- [x] Multi-node management and status monitoring
+- [x] Brute-force protection + fail2ban integration
+- [x] Full config backup/restore/migration
+- [x] SSH hardening
+- [x] Boot auto-start verification
+- [x] Navigation UI refactoring
+- [x] Multi-address client support
+- [x] Offline deployment (embedded Xray + segno)
+- [x] Service status sync on migration
+- [ ] ...
 
 ---
 
@@ -206,7 +186,7 @@ Copyright (c) 2026
 
 ---
 
-## 🙏 致谢
+## 🙏 Acknowledgments
 
 - [XTLS/Xray-core](https://github.com/XTLS/Xray-core)
 - [segno](https://github.com/heuer/segno)

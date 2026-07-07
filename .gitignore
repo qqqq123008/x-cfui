@@ -6,26 +6,26 @@ __pycache__/
 dist/
 build/
 
-# WorkBuddy AI workspace (本地开发缓存)
+# WorkBuddy AI workspace (local dev cache)
 .workbuddy/
 
-# 备份包（太大，且可从源码重新生成）
+# Backup packages (too large, can be regenerated from source)
 backups/
 *.tar.gz
 
-# 服务器管理密钥（敏感信息，切勿上传）
+# Server management keys (sensitive, do not upload)
 ssh_keys_backup/
 *.pem
 *.key
 
-# Xray 二进制（35MB，运行环境独立获取）
+# Xray binary (35MB, obtain separately for your environment)
 xray
 xray.exe
 
-# 烘焙产物（可从源脚本通过 make_xcfui.py 重新生成）
+# Build artifacts (can be regenerated via make_xcfui.py)
 xcfui-deploy.sh
 xcfui-restore.sh
 
-# 操作系统
+# OS files
 .DS_Store
 Thumbs.db
