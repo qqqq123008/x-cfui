@@ -1,5 +1,41 @@
 # x-cfui — Xray 中继管理面板
 
+## ⚠️ 法律声明 / Legal Notice
+
+**【中文】**
+
+本项目仅供以下合法用途：
+- ✅ 企业跨境办公网络加速
+- ✅ 学术研究与网络技术研究
+- ✅ 个人网络架构学习与实践
+- ✅ 其他符合使用者所在国家/地区法律法规的用途
+
+**禁止用于任何非法用途，包括但不限于：**
+- ❌ 绕过国家网络审查
+- ❌ 访问被法律禁止的网站与内容
+- ❌ 从事任何违法犯罪活动
+
+**使用者需遵守所在国家/地区的法律法规。开发者不对任何因非法使用本项目导致的后果承担责任。使用本项目即表示您已阅读并同意遵守相关法律规定。**
+
+---
+
+**【English】**
+
+This project is intended for lawful purposes only:
+- ✅ Enterprise cross-border office network acceleration
+- ✅ Academic research and network technology research
+- ✅ Personal network architecture learning and practice
+- ✅ Other uses that comply with applicable laws
+
+**Prohibited uses include but are not limited to:**
+- ❌ Bypassing national network censorship
+- ❌ Accessing websites and content prohibited by law
+- ❌ Engaging in any illegal activities
+
+**Users must comply with all applicable laws in their jurisdiction. The developer is not responsible for any consequences resulting from illegal use. By using this software, you agree to comply with all applicable laws.**
+
+---
+
 > 一款轻量级、全功能、单文件的 Xray 中继管理面板。  
 > 一通操作即可完成部署，开箱即用。
 
